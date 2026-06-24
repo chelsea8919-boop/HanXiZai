@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>古画长卷 — 手势浏览交互</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            width: 100vw; height: 100vh;
+            overflow: hidden;
+            background: #0a0a0a;
+            font-family: 'STKaiti','KaiTi','STSong','SimSun',serif;
+            cursor: default;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #video { display: none; }
+
+        #scroll-container {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            overflow: hidden;
+            z-index: 1;
+            background: #1a1410;
+        }
+        #painting-img {
+            position: absolute;
+            top: 0; left: 0;
+            height: 100vh;
+            width: auto;
+            opacity: 0.8;
+            will-change: transform;
+            transition: none;
+        }
+
+        #magnifier {
+            position: fixed;
+            width: 280px; height: 280px;
+            border-radius: 50%;
+            border: 3px solid rgba(255,255,255,0.7);
+            box-shadow: 0 0 50px rgba(0,0,0,0.6), 0 0 0 10px rgba(0,0,0,0.25);
+            z-index: 50;
+            pointer-events: none;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: opacity 0.35s ease, transform 0.35s ease;
+            overflow: hidden;
+        }
+        #magnifier.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+        #magnifier-inner {
+            position: absolute;
+            height: 300vh;
+            width: auto;
+            opacity: 1;
+        }
+
+        #top-bar {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw;
+            z-index: 60;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 20px;
+            opacity: 1;
+            transform: translateY(0);
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.5) 70%, transparent 100%);
+            padding-top: 18px;
+            padding-bottom: 26px;
+        }
+        .top-bar-item {
+            font-family: 'STKaiti','KaiTi',cursive;
+            font-size: 13px;
+            color: rgba(200,190,160,0.9);
+            letter-spacing: 2px;
+            padding: 8px 20px;
+            border-radius: 22px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            margin: 0 14px;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .top-bar-item .gesture-icon { font-size: 18px; line-height: 1; }
+        .top-bar-item .gesture-label { color: rgba(200,190,160,0.85); }
+        .top-bar-item .gesture-action {
+            color: rgba(160,140,100,0.7);
+            font-size: 11px;
+            letter-spacing: 1px;
+            padding-left: 6px;
+            border-left: 1px solid rgba(180,160,130,0.2);
+        }
+        .top-bar-divider {
+            color: rgba(180,160,130,0.3);
+            font-size: 12px;
+            margin: 0 4px;
+        }
+
+        #vignette {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 5;
+            background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+        }
+
+        .title-wrap {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%,-50%);
+            text-align: center;
+            pointer-events: none;
+            z-index: 20;
+            transition: opacity 0.8s ease;
+        }
+        .title-main {
+            font-family: 'STKaiti','KaiTi',cursive;
+            font-size: 52px;
+            color: #f2e4cc;
+            letter-spacing: 18px;
+            opacity: 0.95;
+            text-shadow: 0 0 30px rgba(220,200,150,0.35);
+        }
+        .title-sub {
+            font-size: 13px;
+            color: #776e5e;
+            letter-spacing: 8px;
+            margin-top: 12px;
+        }
+        .title-question {
+            font-family: 'STKaiti','KaiTi',cursive;
+            font-size: 20px;
+            color: rgba(220,200,160,1);
+            letter-spacing: 3px;
+            margin-top: 6px;
+            font-style: italic;
+        }
+        .title-question .ripple-char {
+            display: inline-block;
+            animation: rippleWave 2.4s ease-in-out infinite;
+        }
+        @keyframes rippleWave {
+            0%, 100% { transform: translateY(0) scale(1); }
+            25% { transform: translateY(-7px) scale(1.08); }
+            50% { transform: translateY(0) scale(0.95); }
+            75% { transform: translateY(4px) scale(1.04); }
+        }
+        .title-wrap.faded { opacity: 0; pointer-events: none; }
+
+        #hint {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'STKaiti','KaiTi',cursive;
+            font-size: 15px;
+            color: rgba(180,170,150,0.7);
+            letter-spacing: 6px;
+            pointer-events: none;
+            z-index: 20;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            text-align: center;
+            white-space: nowrap;
+        }
+        #hint.visible { opacity: 1; }
+
+        #scene-label {
+            position: fixed;
+            top: 72px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 62;
+            pointer-events: none;
+            font-family: 'STKaiti','KaiTi',cursive;
+            font-size: 36px;
+            color: #e8d5a3;
+            letter-spacing: 16px;
+            text-shadow: 0 0 20px rgba(200,160,80,0.45);
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            text-align: center;
+            white-space: nowrap;
+        }
+        #scene-label.visible { opacity: 1; }
+
+        #scene-desc {
+            position: fixed;
+            top: 118px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 61;
+            pointer-events: none;
+            font-family: 'STKaiti','KaiTi','SimSun',serif;
+            font-size: 20px;
+            color: rgba(210,195,155,0.9);
+            letter-spacing: 2px;
+            line-height: 1.8;
+            text-shadow: 0 0 12px rgba(180,140,60,0.3);
+            opacity: 0;
+            transition: opacity 0.6s ease;
+            text-align: center;
+            max-width: 540px;
+        }
+        #scene-desc.visible { opacity: 1; }
+        #scene-desc .char-reveal {
+            display: inline-block;
+            opacity: 0;
+            animation: charAppear 0.5s ease-out forwards;
+        }
+
+        #dialogue {
+            position: fixed;
+            bottom: 170px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 61;
+            pointer-events: none;
+            font-family: 'STKaiti','KaiTi','SimSun',serif;
+            font-size: 24px;
+            color: rgba(245,230,200,1);
+            letter-spacing: 2px;
+            line-height: 2;
+            text-shadow: 0 0 12px rgba(180,140,60,0.3);
+            opacity: 0;
+            transition: opacity 0.6s ease;
+            text-align: center;
+            max-width: 560px;
+        }
+        #dialogue.visible { opacity: 1; }
+        #dialogue .char-reveal {
+            display: inline-block;
+            opacity: 0;
+            animation: charAppear 0.5s ease-out forwards;
+        }
+        @keyframes charAppear {
+            0% { opacity: 0; transform: translateY(6px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+        }
+        .btn {
+            font-family: 'STKaiti','KaiTi',cursive;
+            font-size: 15px;
+            padding: 12px 44px;
+            border: 1.5px solid rgba(180,160,130,0.6);
+            background: rgba(15,15,15,0.85);
+            color: #c4b898;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            letter-spacing: 8px;
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            outline: none;
+            border-radius: 2px;
+        }
+        .btn:hover {
+            background: #c4b898;
+            color: #0a0a0a;
+            border-color: #c4b898;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn.active {
+            background: #c4b898;
+            color: #0a0a0a;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(8,8,8,0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 100;
+            transition: opacity 0.6s ease;
+        }
+        .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+        .loading-text {
+            font-family: 'STKaiti','KaiTi',cursive;
+            font-size: 26px;
+            color: #8a7e6a;
+            letter-spacing: 8px;
+            animation: breathe 2s ease-in-out infinite;
+        }
+        .loading-sub {
+            font-size: 13px;
+            color: rgba(138,126,106,0.5);
+            letter-spacing: 3px;
+            margin-top: 10px;
+        }
+        @keyframes breathe {
+            0%,100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <video id="video" playsinline></video>
+
+    <div id="scroll-container">
+        <img id="painting-img" src="painting.jpg" alt="韩熙载夜宴图" />
+    </div>
+
+    <div id="vignette"></div>
+
+    <div id="magnifier">
+        <img id="magnifier-inner" src="painting.jpg" alt="" />
+    </div>
+
+    <div id="top-bar">
+        <div class="top-bar-item">
+            <span class="gesture-icon">☝️</span>
+            <span class="gesture-label">食指左右滑动</span>
+            <span class="gesture-action">浏览画卷</span>
+        </div>
+        <span class="top-bar-divider">·</span>
+        <div class="top-bar-item">
+            <span class="gesture-icon">✋</span>
+            <span class="gesture-label">张开五指</span>
+            <span class="gesture-action">放大镜</span>
+        </div>
+    </div>
+
+    <div id="scene-label"></div>
+    <div id="scene-desc"></div>
+
+    <div id="dialogue"></div>
+    <div id="hint"></div>
+
+    <audio id="bgm" loop crossorigin="anonymous"></audio>
+
+    <div class="title-wrap" id="titleWrap">
+        <div class="title-main">古画长卷</div>
+        <div class="title-sub">手势浏览交互</div>
+        <div class="title-question">这场宴席真的如表面这般平静吗？</div>
+    </div>
+
+    <div class="controls">
+        <button class="btn" id="startBtn">开启摄像头</button>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-text" id="loadingText">古卷徐展</div>
+        <div class="loading-sub" id="loadingSub">正在加载…</div>
+    </div>
+
+<script src="mediapipe/hands.js"></script>
+<script>
+(function() {
+    'use strict';
+    console.log('[古画] 脚本开始执行');
+
+    /* ================================================================
+     *  DOM 引用
+     * ================================================================ */
+    const video         = document.getElementById('video');
+    const startBtn      = document.getElementById('startBtn');
+    const scrollContainer = document.getElementById('scroll-container');
+    const paintingImg   = document.getElementById('painting-img');
+    const magnifier     = document.getElementById('magnifier');
+    const magnifierImg  = document.getElementById('magnifier-inner');
+    const titleWrap     = document.getElementById('titleWrap');
+    const hintEl        = document.getElementById('hint');
+    const topBar       = document.getElementById('top-bar');
+    const loadingEl     = document.getElementById('loadingOverlay');
+    const loadingText   = document.getElementById('loadingText');
+    const loadingSub    = document.getElementById('loadingSub');
+    const sceneLabel    = document.getElementById('scene-label');
+    const sceneDesc     = document.getElementById('scene-desc');
+    const dialogueEl    = document.getElementById('dialogue');
+    const bgmAudio      = document.getElementById('bgm');
+
+    console.log('[古画] DOM元素获取完毕');
+
+    /* ================================================================
+     *  状 态 变 量
+     * ================================================================ */
+    let isRunning   = false;
+    let rafId       = null;
+    let cameraReady = false;
+    let handsReady  = false;
+    let frame       = 0;
+
+    let viewportW = window.innerWidth;
+    let viewportH = window.innerHeight;
+
+    let imgNaturalW = 0, imgNaturalH = 0;
+    let imgDisplayW = 0, imgDisplayH = 0;
+    let maxScrollX  = 0;
+    let scrollX     = 0;
+    let targetScrollX = 0;
+    let imageReady  = false;
+
+    const gesture = {
+        handPresent: false,
+        cx: 0, cy: 0,
+        indexX: 0, indexY: 0,
+        prevIndexX: 0,
+        extendedCount: 0,
+        fingers: [false,false,false,false,false],
+    };
+
+    let magnifyActive = false;
+    let magnifyScreenX = 0, magnifyScreenY = 0;
+    let smoothHandSX = 0, smoothHandSY = 0;
+
+    const SCROLL_SENSITIVITY = 1.5;
+
+    // 韩熙载夜宴图五场景区域（从右至左阅读，画卷右端为起始）
+    // 画卷像素空间：左边 fraction=0 → 散宴，右边 fraction=1 → 听乐
+    const SCENE_ZONES = [
+        { name: '散宴', start: 0.00, end: 0.24, desc: '曲终人散，依依惜别', longDesc: '夜色深沉，夜宴落幕，宾客纷纷起身辞别，有人与歌女低语缱绻、依依不舍。而全程宴乐的韩熙载独立一旁，神色淡然落寞，毫无欢愉之意。极致繁华落幕，为何主人唯独满心孤寂呢？' },
+        { name: '清吹', start: 0.24, end: 0.46, desc: '五女奏乐，管乐合鸣', longDesc: '没有喧闹歌舞，数名乐姬整齐端坐，手持笛箫轻声合奏，音律清雅舒缓。韩熙载摇扇静坐，悠然欣赏清音，众人皆松弛恬淡。相较于热烈起舞，为何此时偏爱清幽静乐呢？' },
+        { name: '暂歇', start: 0.46, end: 0.56, desc: '宴间小憩，洗手更衣', longDesc: '歌舞散去，喧嚣暂歇，韩熙载褪去正装，慵懒斜倚床榻，神情倦怠松弛，侍女们手持器物躬身侍奉，场面安静又闲适。热闹过后骤然沉静，这场休憩暗藏着怎样的情绪转折呢？' },
+        { name: '观舞', start: 0.56, end: 0.80, desc: '六幺独舞，击鼓助兴', longDesc: '宴饮氛围渐至热烈，舞女王屋山身姿轻盈，翩然跳起六幺舞，韩熙载挽袖执槌、亲自击鼓助兴，宾客纷纷驻足观赏、兴致盎然。热闹欢腾的舞姿与鼓声背后，藏着主人怎样的心境呢？' },
+        { name: '听乐', start: 0.80, end: 1.00, desc: '琵琶独奏，众人聆听', longDesc: '夜宴初启，厅堂静谧雅致，韩熙载与一众宾客围坐榻上，全员凝神侧目，静静聆听女子弹奏琵琶，全场无人喧闹，皆沉醉于悠扬琴声之中。为何开篇以静乐开场，暗藏着怎样的宴会基调呢？' },
+    ];
+    // 场景背景音乐（请将对应 mp3 文件放入 bgm/ 目录）
+    var BGM_TRACKS = {
+        '听乐': 'bgm/tingyue.mp3',
+        '观舞': 'bgm/guanwu.mp3',
+        '暂歇': 'bgm/zanxie.mp3',
+        '清吹': 'bgm/qingchui.mp3',
+        '散宴': 'bgm/sanyan.mp3'
+    };
+    var currentBgmScene = '';
+    var bgmVolume = 0.35;
+    bgmAudio.volume = bgmVolume;
+    let currentSceneName = '';
+    let descRevealTimer = null;  // 描述文字浮现/消失计时器
+    let dialogueVisible = false;
+    let dialogueShown = false;   // 防止重复触发
+    let dialogueTriggered = false; // 本次进入触发区是否已触发
+    let currentDialogueScene = ''; // 当前触发对话的场景
+    let dialogueSeqTimer = null; // 逐句对话定时器
+
+    function switchBgm(sceneName) {
+        if (!isRunning) return;
+        if (currentBgmScene === sceneName) return;
+        currentBgmScene = sceneName;
+        var url = BGM_TRACKS[sceneName];
+        if (!url) { bgmAudio.pause(); return; }
+        bgmAudio.src = url;
+        bgmAudio.load();
+        bgmAudio.play().catch(function() { /* 自动播放可能被浏览器阻止 */ });
+    }
+
+    function updateSceneLabel() {
+        if (!imageReady) return;
+        // 以视口中心在画卷上的位置来判断所处场景
+        const centerX = scrollX + viewportW / 2;
+        const fraction = centerX / imgDisplayW;
+        let sceneName = '';
+        let sceneLongDesc = '';
+        for (const zone of SCENE_ZONES) {
+            if (fraction >= zone.start && fraction < zone.end) {
+                sceneName = zone.name;
+                sceneLongDesc = zone.longDesc || '';
+                break;
+            }
+        }
+        if (sceneName !== currentSceneName) {
+            currentSceneName = sceneName;
+            switchBgm(sceneName);
+            // 取消之前的动画计时器
+            if (descRevealTimer) { clearTimeout(descRevealTimer); descRevealTimer = null; }
+            sceneDesc.classList.remove('visible');
+            sceneDesc.innerHTML = '';
+
+            if (sceneName) {
+                sceneLabel.textContent = sceneName;
+                sceneLabel.classList.add('visible');
+                if (sceneLongDesc) {
+                    // 逐字构建 span，每个字符独立动画延迟
+                    let html = '';
+                    for (let i = 0; i < sceneLongDesc.length; i++) {
+                        const delay = (i * 0.14).toFixed(2);
+                        html += '<span class="char-reveal" style="animation-delay:' + delay + 's">' + sceneLongDesc[i] + '</span>';
+                    }
+                    sceneDesc.innerHTML = html;
+                    sceneDesc.classList.add('visible');
+                    // 全部浮现后停留 2 秒再消失
+                    const totalTime = sceneLongDesc.length * 140 + 500 + 2000; // ms
+                    descRevealTimer = setTimeout(() => {
+                        sceneDesc.classList.remove('visible');
+                        descRevealTimer = null;
+                    }, totalTime);
+                } else {
+                    sceneDesc.classList.remove('visible');
+                }
+            } else {
+                sceneLabel.classList.remove('visible');
+                sceneDesc.classList.remove('visible');
+            }
+        }
+    }
+
+    let handsInstance = null;
+    let handLandmarks = null;
+    let lastHandTime = 0;
+    const HAND_TIMEOUT_MS = 300;
+    let handsSendCounter = 0;
+
+    /* ================================================================
+     *  图 片 预 加 载
+     * ================================================================ */
+    function initImage() {
+        return new Promise((resolve) => {
+            console.log('[古画] initImage 开始, paintingImg.complete=' + paintingImg.complete + ', nw=' + paintingImg.naturalWidth);
+            if (paintingImg.complete && paintingImg.naturalWidth > 0) {
+                _calcImageDims(); resolve(); return;
+            }
+            paintingImg.onload = () => {
+                console.log('[古画] 图片 onload 触发, nw=' + paintingImg.naturalWidth);
+                _calcImageDims(); resolve();
+            };
+            paintingImg.onerror = () => {
+                console.warn('[古画] 图片加载失败');
+                _calcImageDims(); resolve();
+            };
+            setTimeout(() => {
+                if (!imageReady) {
+                    console.log('[古画] 5s超时, 强制初始化');
+                    _calcImageDims(); resolve();
+                }
+            }, 5000);
+        });
+    }
+
+    function _calcImageDims() {
+        imgNaturalW = paintingImg.naturalWidth;
+        imgNaturalH = paintingImg.naturalHeight;
+        if (!imgNaturalW || !imgNaturalH || imgNaturalW < 10 || imgNaturalH < 10) {
+            imgNaturalW = 6280; imgNaturalH = 498;
+            console.warn('[古画] 图片尺寸异常，使用默认 6280x498（韩熙载夜宴图完整版）');
+        }
+        imgDisplayH = viewportH;
+        imgDisplayW = (imgNaturalW / imgNaturalH) * imgDisplayH;
+        if (imgDisplayW < viewportW) {
+            imgDisplayW = viewportW * 1.5;
+            imgDisplayH = imgDisplayW / (imgNaturalW / imgNaturalH);
+        }
+        maxScrollX = Math.max(0, imgDisplayW - viewportW);
+        paintingImg.style.height = viewportH + 'px';
+        paintingImg.style.width = 'auto';
+        magnifierImg.style.height = (viewportH * 3) + 'px';
+        scrollX = maxScrollX;
+        targetScrollX = scrollX;
+        imageReady = true;
+        updateScroll();
+        console.log('[古画] 图片尺寸:', imgNaturalW + 'x' + imgNaturalH,
+            '-> 显示:', Math.round(imgDisplayW) + 'x' + Math.round(imgDisplayH),
+            '可滚动:', Math.round(maxScrollX) + 'px');
+    }
+
+    function handleResize() {
+        viewportW = window.innerWidth;
+        viewportH = window.innerHeight;
+        if (imageReady) _calcImageDims();
+        updateScroll();
+    }
+    window.addEventListener('resize', handleResize);
+
+    /* ================================================================
+     *  MediaPipe Hands 初始化
+     * ================================================================ */
+    function initHandsDetector() {
+        return new Promise((resolve, reject) => {
+            if (typeof Hands === 'undefined') {
+                console.error('[MediaPipe] Hands 未定义！');
+                reject(new Error('Hands 未定义，媒体库加载失败'));
+                return;
+            }
+            console.log('[MediaPipe] 开始创建 Hands 实例...');
+            try {
+                handsInstance = new Hands({
+                    locateFile: (file) => {
+                        var path = 'mediapipe/' + file;
+                        console.log('[MediaPipe] locateFile:', file, '->', path);
+                        return path;
+                    }
+                });
+                handsInstance.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 0,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.4,
+                });
+
+                let loaded = false;
+                handsInstance.onResults((results) => {
+                    if (!loaded) {
+                        loaded = true;
+                        handsReady = true;
+                        console.log('[MediaPipe] 模型就绪！');
+                        resolve();
+                    }
+                    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                        handLandmarks = results.multiHandLandmarks[0];
+                        lastHandTime = performance.now();
+                    }
+                });
+
+                console.log('[MediaPipe] 发送第一帧...');
+                handsInstance.send({ image: video }).catch(err => {
+                    console.error('[MediaPipe] send 失败:', err);
+                    reject(err);
+                });
+            } catch (e) {
+                console.error('[MediaPipe] 初始化异常:', e);
+                reject(e);
+            }
+        });
+    }
+
+    /* ================================================================
+     *  手势状态更新
+     * ================================================================ */
+    function updateGestureFromLandmarks(lm) {
+        const mx = (idx) => 1 - lm[idx].x;
+        gesture.handPresent = true;
+        gesture.cx = (mx(0) + mx(9)) / 2;
+        gesture.cy = (lm[0].y + lm[9].y) / 2;
+        gesture.fingers[0] = Math.abs(mx(4) - mx(6)) > 0.06;
+        gesture.fingers[1] = lm[8].y < lm[6].y;
+        gesture.fingers[2] = lm[12].y < lm[10].y;
+        gesture.fingers[3] = lm[16].y < lm[14].y;
+        gesture.fingers[4] = lm[20].y < lm[18].y;
+        gesture.extendedCount = gesture.fingers.filter(Boolean).length;
+        gesture.prevIndexX = gesture.indexX;
+        gesture.indexX = mx(8);
+        gesture.indexY = lm[8].y;
+    }
+
+    function updateScroll() {
+        paintingImg.style.transform = 'translateX(' + (-scrollX) + 'px)';
+    }
+
+    function processGestures() {
+        if (!gesture.handPresent || !imageReady) {
+            magnifyActive = false;
+            magnifier.classList.remove('active');
+            hintEl.classList.remove('visible');
+            return;
+        }
+
+        if (gesture.extendedCount >= 4) {
+            magnifyActive = true;
+            const sx = gesture.cx * viewportW;
+            const sy = gesture.cy * viewportH;
+            smoothHandSX += (sx - smoothHandSX) * 0.25;
+            smoothHandSY += (sy - smoothHandSY) * 0.25;
+            magnifyScreenX = smoothHandSX;
+            magnifyScreenY = smoothHandSY;
+            const magW = 280, magH = 280, magScale = 3;
+            magnifier.style.left = (magnifyScreenX - magW/2) + 'px';
+            magnifier.style.top  = (magnifyScreenY - magH/2) + 'px';
+            magnifier.classList.add('active');
+            const imgCenterX = magnifyScreenX + scrollX;
+            const imgCenterY = magnifyScreenY;
+            magnifierImg.style.left = (-imgCenterX * magScale + magW/2) + 'px';
+            magnifierImg.style.top  = (-imgCenterY * magScale + magH/2) + 'px';
+            hintEl.textContent = '🔍 放大镜跟随手掌移动';
+            hintEl.classList.add('visible');
+            return;
+        }
+
+        if (gesture.extendedCount === 1 && gesture.fingers[1]) {
+            magnifyActive = false;
+            magnifier.classList.remove('active');
+            const DEAD_ZONE = 0.03;
+            const rawX = gesture.indexX;
+            const mappedX = Math.max(0, Math.min(1, (rawX - DEAD_ZONE) / (1 - 2 * DEAD_ZONE)));
+            targetScrollX = mappedX * maxScrollX;
+            // 缓动跟随，手指移动时画面以稍慢速度接近目标位置
+            scrollX += (targetScrollX - scrollX) * 0.2;
+            updateScroll();
+            updateScroll();
+            hintEl.textContent = '☝️ 食指左右移动 · 画卷跟随手指';
+            hintEl.classList.add('visible');
+            return;
+        }
+
+        magnifyActive = false;
+        magnifier.classList.remove('active');
+        hintEl.classList.remove('visible');
+    }
+
+    function clearDialogueSequence() {
+        if (dialogueSeqTimer) { clearTimeout(dialogueSeqTimer); dialogueSeqTimer = null; }
+        dialogueEl.classList.remove('visible');
+        dialogueEl.innerHTML = '';
+    }
+
+    function showDialogueSentence(sentences, index) {
+        if (index >= sentences.length) {
+            dialogueEl.classList.remove('visible');
+            setTimeout(function() {
+                dialogueEl.innerHTML = '';
+                dialogueVisible = false;
+                dialogueShown = false;
+            }, 600);
+            return;
+        }
+        dialogueEl.textContent = sentences[index];
+        dialogueEl.classList.add('visible');
+        dialogueSeqTimer = setTimeout(function() {
+            showDialogueSentence(sentences, index + 1);
+        }, 2700);
+    }
+
+    function checkDialogue() {
+        // 场景切换 → 强制停止对话
+        if (currentSceneName !== currentDialogueScene) {
+            if (dialogueVisible) {
+                dialogueVisible = false;
+                dialogueShown = false;
+                dialogueTriggered = false;
+                clearDialogueSequence();
+            }
+        }
+        if (currentSceneName !== '听乐' && currentSceneName !== '观舞' && currentSceneName !== '暂歇' && currentSceneName !== '清吹' && currentSceneName !== '散宴') {
+            return;
+        }
+        var imgCenterX = magnifyScreenX + scrollX;
+        var fraction = imgCenterX / imgDisplayW;
+
+        // 各场景触发区间定义
+        var triggerZone = null;
+        if (currentSceneName === '听乐')   triggerZone = { lo: 0.78, hi: 0.84 };
+        if (currentSceneName === '观舞')   triggerZone = { lo: 0.72, hi: 0.76 };
+        if (currentSceneName === '暂歇')   triggerZone = { lo: 0.48, hi: 0.52 };
+        if (currentSceneName === '清吹')   triggerZone = { lo: 0.32, hi: 0.38 };
+        if (currentSceneName === '散宴')   triggerZone = { lo: 0.08, hi: 0.10 };
+
+        var inZone = magnifyActive && fraction >= triggerZone.lo && fraction <= triggerZone.hi;
+
+        if (inZone && !dialogueTriggered) {
+            dialogueTriggered = true;
+            dialogueShown = true;
+            dialogueVisible = true;
+            currentDialogueScene = currentSceneName;
+            var sentences;
+            if (currentSceneName === '听乐') sentences = [
+                '韩熙载：今日难得诸位好友齐聚，快请李家弹一曲琵琶助兴。',
+                '宾客：久闻李家技艺绝妙，今日可算有耳福。',
+                '琵琶女：承蒙韩大人抬爱，小女子献丑了。'
+            ];
+            if (currentSceneName === '观舞') sentences = [
+                '韩熙载：屋山，来一段六幺舞，我为你击鼓。',
+                '友人：大人击鼓铿锵，姑娘舞姿轻盈，真是相得益彰！',
+                '王屋山：献舞一支，博各位一笑。'
+            ];
+            if (currentSceneName === '暂歇') sentences = [
+                '韩熙载：歌舞久了，略感乏累，暂且歇片刻。',
+                '侍女：大人，备好茶水与盥手用具了。'
+            ];
+            if (currentSceneName === '清吹') sentences = [
+                '韩熙载：换丝竹清音，静静闲谈，不必喧闹。',
+                '乐姬：我等合奏箫笛，轻声吹奏。',
+                '宾客：这般清幽乐曲，倒比歌舞更舒心。'
+            ];
+            if (currentSceneName === '散宴') sentences = [
+                '宾客：夜色已深，不便久留，今日多谢大人盛情款待。',
+                '歌女：公子慢行，改日再会。',
+                '韩熙载：夜色寒凉，一路保重，有空常来小聚。'
+            ];
+            showDialogueSentence(sentences, 0);
+        }
+    }
+
+    function renderFrame() {
+        if (!cameraReady) { rafId = requestAnimationFrame(renderFrame); return; }
+        frame++;
+        handsSendCounter++;
+        if (handsReady && handsInstance && handsSendCounter >= 3) {
+            handsSendCounter = 0;
+            try { handsInstance.send({ image: video }); } catch(e) {}
+        }
+        const now = performance.now();
+        if (handLandmarks && (now - lastHandTime < HAND_TIMEOUT_MS)) {
+            updateGestureFromLandmarks(handLandmarks);
+        } else {
+            gesture.handPresent = false;
+            if (now - lastHandTime >= HAND_TIMEOUT_MS) handLandmarks = null;
+        }
+        processGestures();
+        updateSceneLabel();
+        checkDialogue();
+        rafId = requestAnimationFrame(renderFrame);
+    }
+
+    async function startCamera() {
+        try {
+            loadingText.textContent = '古卷徐展';
+            loadingSub.textContent = '正在加载画卷…';
+            loadingEl.classList.remove('hidden');
+
+            if (!imageReady) {
+                await initImage();
+            }
+            updateScroll();
+
+            loadingText.textContent = '研墨调锋';
+            loadingSub.textContent = '正在准备摄像头…';
+            startBtn.disabled = true;
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+                audio: false
+            });
+            video.srcObject = stream;
+            await new Promise(r => { video.onloadedmetadata = () => { video.play(); r(); }; });
+            await new Promise(r => {
+                const chk = () => { if (video.readyState >= 2) r(); else requestAnimationFrame(chk); };
+                chk();
+            });
+            console.log('[古画] 摄像头就绪');
+
+            if (!handsReady) {
+                loadingSub.textContent = '正在加载手势模型…';
+                console.log('[MediaPipe] 检查 Hands 对象:', typeof Hands);
+                try {
+                    await initHandsDetector();
+                    loadingSub.textContent = '手势模型就绪';
+                } catch (e) {
+                    console.warn('手势模型初始化失败:', e.message);
+                    loadingSub.textContent = '手势模型加载失败（可查看画卷但无手势）';
+                }
+            }
+
+            cameraReady = true;
+            isRunning = true;
+            setTimeout(() => loadingEl.classList.add('hidden'), 700);
+            startBtn.textContent = '关闭摄像头';
+            startBtn.classList.add('active');
+            startBtn.disabled = false;
+            titleWrap.classList.add('faded');
+            hintEl.classList.add('visible');
+            switchBgm(currentSceneName);
+            if (!rafId) renderFrame();
+
+        } catch (err) {
+            loadingEl.classList.add('hidden');
+            startBtn.disabled = false;
+            console.error('摄像头启动失败:', err);
+            alert('无法访问摄像头，请检查权限设置。\n' + err.message);
+        }
+    }
+
+    function stopCamera() {
+        isRunning = false;
+        cameraReady = false;
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+        if (video.srcObject) {
+            video.srcObject.getTracks().forEach(t => t.stop());
+            video.srcObject = null;
+        }
+        handLandmarks = null;
+        lastHandTime = 0;
+        gesture.handPresent = false;
+        magnifyActive = false;
+        magnifier.classList.remove('active');
+        startBtn.textContent = '开启摄像头';
+        startBtn.classList.remove('active');
+        titleWrap.classList.remove('faded');
+        hintEl.classList.remove('visible');
+        sceneLabel.classList.remove('visible');
+        sceneDesc.classList.remove('visible');
+        sceneDesc.innerHTML = '';
+        if (descRevealTimer) { clearTimeout(descRevealTimer); descRevealTimer = null; }
+        currentSceneName = '';
+        dialogueVisible = false;
+        dialogueShown = false;
+        dialogueTriggered = false;
+        currentDialogueScene = '';
+        if (dialogueSeqTimer) { clearTimeout(dialogueSeqTimer); dialogueSeqTimer = null; }
+        dialogueEl.classList.remove('visible');
+        dialogueEl.innerHTML = '';
+        bgmAudio.pause();
+        currentBgmScene = '';
+        scrollX = maxScrollX;
+        updateScroll();
+    }
+
+    startBtn.addEventListener('click', () => {
+        if (isRunning) stopCamera(); else startCamera();
+    });
+
+    // 水波纹文字特效：将每个字拆分为独立 span，依次延迟动画
+    (function initRippleText() {
+        const el = document.querySelector('.title-question');
+        if (!el) return;
+        const text = el.textContent.trim();
+        el.textContent = '';
+        for (let i = 0; i < text.length; i++) {
+            const span = document.createElement('span');
+            span.className = 'ripple-char';
+            span.textContent = text[i];
+            span.style.animationDelay = (i * 0.12) + 's';
+            el.appendChild(span);
+        }
+    })();
+
+    // 页面初始化
+    initImage().then(() => {
+        updateScroll();
+        console.log('[古画] 页面初始化完成，图像已就绪');
+        // 图像加载完成后隐藏加载遮罩层，露出标题和按钮
+        setTimeout(() => loadingEl.classList.add('hidden'), 400);
+    });
+    handleResize();
+
+    console.log('[古画] 脚本初始化完成');
+})();
+</script>
+</body>
+</html>
