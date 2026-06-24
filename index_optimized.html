@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>古画长卷 — 手势浏览交互</title>
+    <link rel="preload" as="image" href="painting.jpg" fetchpriority="high">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -319,13 +320,13 @@
     <video id="video" playsinline></video>
 
     <div id="scroll-container">
-        <img id="painting-img" src="painting.jpg" alt="韩熙载夜宴图" />
+        <img id="painting-img" src="painting.jpg" alt="韩熙载夜宴图" decoding="async" />
     </div>
 
     <div id="vignette"></div>
 
     <div id="magnifier">
-        <img id="magnifier-inner" src="painting.jpg" alt="" />
+        <img id="magnifier-inner" src="painting.jpg" alt="" decoding="async" />
     </div>
 
     <div id="top-bar">
@@ -365,7 +366,6 @@
         <div class="loading-sub" id="loadingSub">正在加载…</div>
     </div>
 
-<script src="mediapipe/hands.js"></script>
 <script>
 (function() {
     'use strict';
@@ -811,6 +811,16 @@
         rafId = requestAnimationFrame(renderFrame);
     }
 
+    function loadScript(src) {
+        return new Promise(function(resolve, reject) {
+            var s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+        });
+    }
+
     async function startCamera() {
         try {
             loadingText.textContent = '古卷徐展';
@@ -842,6 +852,11 @@
                 loadingSub.textContent = '正在加载手势模型…';
                 console.log('[MediaPipe] 检查 Hands 对象:', typeof Hands);
                 try {
+                    // 动态加载 hands.js，不阻塞首屏渲染
+                    if (typeof Hands === 'undefined') {
+                        loadingSub.textContent = '正在下载手势库…';
+                        await loadScript('mediapipe/hands.js');
+                    }
                     await initHandsDetector();
                     loadingSub.textContent = '手势模型就绪';
                 } catch (e) {
